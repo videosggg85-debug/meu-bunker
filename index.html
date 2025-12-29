@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>The Bunker | Hunter's Network</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Estilos para as novas funcionalidades */
+        .notification-dot { width: 10px; height: 10px; background: #ed4245; border-radius: 50%; display: inline-block; margin-left: auto; }
+        .pending-preview-box { background: #202225; padding: 10px; border-radius: 5px; margin: 5px 0; font-size: 11px; color: #dcddde; }
+        .btn-ban-integrated { background: #ed4245 !important; color: white !important; margin-top: 5px; }
+        .btn-role-integrated { background: #5865f2 !important; color: white !important; margin-top: 5px; }
+        
+        /* Estilo do botão de comentar */
+        .btn-comentar-toggle { 
+            background: #36393f; 
+            color: #ccc; 
+            border: 1px solid #444; 
+            padding: 4px 10px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            margin-top: 8px; 
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div id="auth-screen" class="overlay">
+        <div class="auth-form">
+            <h2>ACESSAR O BUNKER</h2>
+            <input type="text" id="user" placeholder="Nome de Caçador">
+            <input type="password" id="pass" placeholder="Senha Secreta">
+            <label style="color:gray; font-size: 0.8em; display: block; margin: 10px 0; cursor: pointer;">
+                <input type="checkbox" id="remember"> Lembrar de mim
+            </label>
+            <button onclick="auth('login')">Entrar</button>
+            <p>Não tem conta? <a href="#" style="color:red" onclick="auth('cadastro')">Registrar-se</a></p>
+        </div>
+    </div>
+
+    <div id="staff-pending-area" style="display:none; max-height: 400px; overflow-y: auto;">
+        <h4 style="margin:0 0 10px 0; color:#f1c40f; font-size:12px;">POSTAGENS PARA ANALISAR</h4>
+        <div id="pending-list"></div>
+    </div>
+
+    <div id="admin-panel-modal" class="overlay" style="display:none;">
+        <div class="admin-container" onclick="event.stopPropagation()">
+            <div class="admin-sidebar">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <h3 id="adm-user-title" style="color:white; margin-bottom:5px;">Usuário</h3>
+                        <p id="adm-user-ip" style="font-size:10px; color:gray; margin-bottom:20px;">IP: 0.0.0.0</p>
+                    </div>
+                    <span onclick="document.getElementById('admin-panel-modal').style.display='none'" style="cursor:pointer; color:red; font-weight:bold; font-size:18px; padding: 5px;">✖</span>
+                </div>
+                <p style="font-size:10px; color:#00ff00; font-family:monospace;">> ESPIONAGEM_DE_CHAT</p>
+            </div>
+            <div class="admin-main">
+                <div id="adm-chat-logs" class="spy-log"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-perfil" class="modal-perfil" onclick="fecharModal(event)">
+        <div class="perfil-card" onclick="event.stopPropagation()">
+            <div class="perfil-banner"></div>
+            <div id="p-avatar" class="perfil-avatar-grande"></div>
+            <div class="perfil-info">
+                <div id="p-nome" class="perfil-nome">Nome</div>
+                <div id="p-tag" class="perfil-tag">@usuario</div>
+                <div class="perfil-divider"></div>
+                <div class="perfil-label">Sobre Mim</div>
+                <div style="font-size: 13px; margin-top: 5px;">Caçador oficial do Bunker.</div>
+                <div class="perfil-divider"></div>
+                <div class="perfil-label">Cargo</div>
+                <div id="p-cargo" class="perfil-cargo-box">Cargo</div>
+                
+                <div id="admin-tools" class="admin-tools-box" style="display:none;">
+                    <div class="perfil-divider"></div>
+                    <div class="perfil-label">Administração</div>
+                    <button class="btn-role-integrated" onclick="mudarCargoRapido()" style="width:100%; font-size:11px;">ALTERAR CARGO</button>
+                    <button class="btn-ban-integrated" onclick="banirUsuario()" style="width:100%; font-size:11px;">BANIR IP</button>
+                    <button onclick="abrirAdminConsole()" style="width:100%; font-size:11px; margin-top:5px; background:#f1c40f; color:black; border:none; cursor:pointer; padding:5px;">VER LOGS DE CHAT</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="header"><h3>MEMBROS</h3></div>
+        <div id="member-list" class="member-list"></div>
+    </div>
+
+    <div class="main-content">
+        <div class="tab-container">
+            <button class="tab-btn active" onclick="switchTab('feed')">Bunker Feed</button>
+            <button class="tab-btn" onclick="switchTab('perfil-proprio')">Meu Perfil</button>
+        </div>
+
+        <div id="feed" class="tab-content active">
+            <div class="feed">
+                <div class="post-box" id="composer" style="display:none">
+                    <input type="text" id="p-titulo" placeholder="Título da Ocorrência...">
+                    <textarea id="p-conteudo" style="width:100%; height:80px; background:#202225; color:white; border:none; padding:10px; margin:10px 0;" placeholder="O que aconteceu?"></textarea>
+                    <input type="file" id="p-file" style="background: none; border: 1px dashed #555; margin-bottom: 10px;">
+                    <button onclick="enviarPost()">Publicar no Blog</button>
+                </div>
+                <div id="posts-container"></div>
+            </div>
+        </div>
+
+        <div id="perfil-proprio" class="tab-content">
+            <div class="feed">
+                <div id="meu-perfil-detalhes"></div>
+                <input type="file" id="input-foto-perfil" style="display:none" onchange="subirFotoPerfil()" accept="image/*">
+            </div>
+        </div>
+    </div>
+
+    <div class="fb-contacts" id="contacts-widget" style="display:none">
+        <div class="fb-contacts-header" onclick="toggleContacts()">
+            <span>Contatos Online</span>
+            <span id="contact-arrow">▼</span>
+        </div>
+        <div id="fb-list" class="fb-contacts-list"></div>
+    </div>
+
+    <div id="fb-chat-window" class="fb-chat-window" style="display:none;">
+        <div class="chat-header">
+            <span id="chat-target-name">Conversa</span>
+            <span onclick="closeChat()" style="cursor:pointer">✖</span>
+        </div>
+        <div id="chat-msgs" class="chat-messages"></div>
+        <div class="emoji-bar">
+            <span onclick="addEmoji('💀')">💀</span>
+            <span onclick="addEmoji('🔥')">🔥</span>
+            <span onclick="addEmoji('⚠️')">⚠️</span>
+            <span onclick="addEmoji('🛡️')">🛡️</span>
+            <span onclick="addEmoji('☣️')">☣️</span>
+        </div>
+        <div class="chat-input-area">
+            <label for="c-file" style="cursor:pointer">📎</label>
+            <input type="file" id="c-file" style="display:none">
+            <input type="text" id="m-texto" placeholder="Mensagem...">
+            <button onclick="mandarMensagem()" style="width:auto">></button>
+        </div>
+    </div>
+
+    <script>
+        const API = "http://127.0.0.1:5000";
+        let logado = null;
+        let chatCom = null;
+        let userSendoVisto = null;
+        let ipSendoVisto = null;
+        let lastMessagesCount = {}; 
+        let postAberto = null; 
+
+        window.onload = () => {
+            const salvo = localStorage.getItem('bunker_user');
+            if(salvo) {
+                const d = JSON.parse(salvo);
+                document.getElementById('user').value = d.user;
+                document.getElementById('pass').value = d.pass;
+                document.getElementById('remember').checked = true;
+            }
+        };
+
+        async function auth(rota) {
+            const user = document.getElementById('user').value;
+            const senha = document.getElementById('pass').value;
+            const remember = document.getElementById('remember').checked;
+
+            try {
+                const res = await fetch(`${API}/api/${rota}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({user, senha})
+                });
+                const data = await res.json();
+
+                if(res.ok) {
+                    if(rota === 'login') {
+                        logado = data;
+                        if(remember) localStorage.setItem('bunker_user', JSON.stringify({user, pass: senha}));
+                        document.getElementById('auth-screen').style.display = 'none';
+                        document.getElementById('composer').style.display = 'block';
+                        document.getElementById('contacts-widget').style.display = 'block';
+                        carregarDados();
+                        // TEMPO DE ATUALIZAÇÃO ALTERADO PARA 5 MINUTOS (300000ms)
+                        setInterval(carregarDados, 300000); 
+                        setInterval(atualizarChat, 3000);
+                    } else alert(data.msg);
+                } else alert(data.erro);
+            } catch(e) { alert("Servidor offline ou erro de conexão!"); }
+        }
+
+        async function carregarDados() {
+            const res = await fetch(`${API}/api/comunidade`);
+            const data = await res.json();
+            const isStaff = logado.cargo !== 'Humano' && logado.cargo !== 'Recruta Nível 0';
+
+            if(isStaff) {
+                document.getElementById('staff-pending-area').style.display = 'block';
+                const pendentes = data.posts.filter(p => p.status === 'pendente');
+                document.getElementById('pending-list').innerHTML = pendentes.map(p => `
+                    <div class="pending-card" style="border-bottom: 1px solid #333; padding-bottom:10px;">
+                        <b>${p.autor}</b> enviou: <i>${p.titulo}</i>
+                        <div class="pending-preview-box">${p.conteudo.substring(0, 100)}...</div>
+                        <div class="pending-btns">
+                            <button class="btn-approve" onclick="decidirPost(${p.id}, 'aceitar')">ACEITAR</button>
+                            <button class="btn-reject" onclick="decidirPost(${p.id}, 'recusar')">RECUSAR</button>
+                        </div>
+                    </div>
+                `).join('') || '<p style="font-size:10px; color:gray;">Nenhuma pendência.</p>';
+            }
+
+            document.getElementById('member-list').innerHTML = data.membros.map(m => {
+                const foto = m.foto ? `${API}/uploads/${m.foto}?t=${Date.now()}` : 'https://www.w3schools.com/howto/img_avatar.png';
+                return `
+                <div class="member-card" onclick="verPerfil('${m.user}')" style="display:flex; align-items:center; gap:10px;">
+                    <img src="${foto}" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
+                    <div>
+                        <b class="cargo-${m.cargo.split(' ')[0]}">${m.user}</b><br>
+                        <span style="font-size:9px; color:gray;">${m.cargo}</span>
+                    </div>
+                </div>`;
+            }).join('');
+
+            let contatosOrdenados = data.membros.filter(m => m.user !== logado.user);
+            
+            document.getElementById('fb-list').innerHTML = contatosOrdenados.map(m => {
+                const fotoUrl = m.foto ? `${API}/uploads/${m.foto}?t=${Date.now()}` : 'https://www.w3schools.com/howto/img_avatar.png';
+                const temNotif = lastMessagesCount[m.user] === 'novo';
+                return `
+                <div class="contact-item" onclick="marcarLido('${m.user}')" style="${temNotif ? 'background: #36393f;' : ''}">
+                    <img src="${fotoUrl}" class="contact-avatar" style="width:30px; height:30px; border-radius:50%; object-fit:cover;">
+                    <div class="status-dot ${m.online ? 'online' : 'offline'}"></div>
+                    <div style="flex:1">
+                        <div style="font-size:13px; font-weight:bold;">${m.user}</div>
+                        <div style="font-size:10px; color:gray;">${m.cargo}</div>
+                    </div>
+                    ${temNotif ? '<div class="notification-dot"></div>' : ''}
+                </div>`;
+            }).join('');
+
+            const aprovados = data.posts.filter(p => p.status === 'aprovado');
+            document.getElementById('posts-container').innerHTML = aprovados.map(p => {
+                const autorInfo = data.membros.find(m => m.user === p.autor);
+                const autorFoto = autorInfo && autorInfo.foto ? `${API}/uploads/${autorInfo.foto}?t=${Date.now()}` : 'https://www.w3schools.com/howto/img_avatar.png';
+                const postComentarios = data.comentarios.filter(c => c.post_id === p.id);
+                const displayInput = (postAberto === p.id) ? 'flex' : 'none';
+
+                return `
+                <div class="post-box">
+                    ${isStaff ? `<button class="btn-delete-post" style="display:block" onclick="apagarPost(${p.id})">APAGAR</button>` : ''}
+                    <div style="display:flex; align-items:center; margin-bottom:10px;">
+                        <img src="${autorFoto}" class="post-author-img" style="object-fit:cover;">
+                        <small class="cargo-${p.cargo_autor.split(' ')[0]}">${p.autor} (${p.cargo_autor})</small>
+                    </div>
+                    <h2>${p.titulo}</h2>
+                    <p>${p.conteudo}</p>
+                    ${p.anexo ? `<img src="${API}/uploads/${p.anexo}" style="max-width:100%; border-radius:8px;">` : ''}
+                    
+                    <div class="comment-section">
+                        ${postComentarios.map(c => `<div class="comment-item"><b>${c.autor}:</b> ${c.texto}</div>`).join('')}
+                        
+                        <button class="btn-comentar-toggle" onclick="toggleCampoComentario(${p.id})">💬 Comentar</button>
+
+                        <div class="comment-input-area" id="area-coment-${p.id}" style="display: ${displayInput}; margin-top:10px;">
+                            <input type="text" id="com-input-${p.id}" placeholder="Escreva um comentário..." onkeypress="if(event.key==='Enter') enviarComentario(${p.id})">
+                            <button onclick="enviarComentario(${p.id})">Enviar</button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function toggleCampoComentario(id) {
+            postAberto = (postAberto === id) ? null : id;
+            carregarDados();
+            if(postAberto) {
+                setTimeout(() => {
+                    const el = document.getElementById(`com-input-${id}`);
+                    if(el) el.focus();
+                }, 50);
+            }
+        }
+
+        function marcarLido(nome) {
+            lastMessagesCount[nome] = 'lido';
+            openChat(nome);
+        }
+
+        async function verPerfil(nome) {
+            const res = await fetch(`${API}/api/perfil/${nome}`);
+            const u = await res.json();
+            userSendoVisto = u.user;
+            ipSendoVisto = u.ip;
+            document.getElementById('p-nome').innerText = u.user;
+            document.getElementById('p-tag').innerText = `@${u.user.toLowerCase()}`;
+            document.getElementById('p-cargo').innerText = u.cargo;
+            const foto = u.foto ? `${API}/uploads/${u.foto}?t=${Date.now()}` : 'https://www.w3schools.com/howto/img_avatar.png';
+            document.getElementById('p-avatar').style.backgroundImage = `url('${foto}')`;
+            const isStaff = logado.cargo !== 'Humano' && logado.cargo !== 'Recruta Nível 0';
+            document.getElementById('admin-tools').style.display = (isStaff && u.user !== logado.user) ? 'block' : 'none';
+            document.getElementById('modal-perfil').style.display = 'flex';
+        }
+
+        async function subirFotoPerfil() {
+            const file = document.getElementById('input-foto-perfil').files[0];
+            if(!file) return;
+            const fd = new FormData();
+            fd.append('foto', file);
+            fd.append('user', logado.user);
+            const res = await fetch(`${API}/api/atualizar_foto`, { method: 'POST', body: fd });
+            const data = await res.json();
+            if(res.ok) {
+                logado.foto = data.foto;
+                carregarMeuPerfil(); 
+                carregarDados();     
+            }
+        }
+
+        async function atualizarChat() {
+            if(!chatCom || document.getElementById('fb-chat-window').style.display === 'none') return;
+            const res = await fetch(`${API}/api/ler_mensagens/${logado.user}/${chatCom}`);
+            const msgs = await res.json();
+            const container = document.getElementById('chat-msgs');
+            container.innerHTML = msgs.map(m => `
+                <div class="msg-bubble ${m.remetente === logado.user ? 'msg-eu' : 'msg-outro'}">
+                    ${m.texto ? `<div>${m.texto}</div>` : ''}
+                    ${m.anexo ? `<img src="${API}/uploads/${m.anexo}" style="max-width:200px; border-radius:10px;">` : ''}
+                </div>
+            `).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function decidirPost(id, acao) {
+            await fetch(`${API}/api/admin/gerenciar_post`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({post_id: id, acao: acao})
+            });
+            carregarDados();
+        }
+
+        async function abrirAdminConsole() {
+            document.getElementById('adm-user-title').innerText = userSendoVisto;
+            document.getElementById('adm-user-ip').innerText = "IP: " + (ipSendoVisto || "Desconhecido");
+            document.getElementById('admin-panel-modal').style.display = 'flex';
+            const res = await fetch(`${API}/api/admin/espionar/${userSendoVisto}`);
+            const logs = await res.json();
+            document.getElementById('adm-chat-logs').innerHTML = logs.map(l => `
+                <div style="margin-bottom:8px; border-bottom:1px solid #222;">
+                    <span style="color:#888;">[${l.data}]</span> <b>${l.remetente}</b> -> <b>${l.destinatario}</b>: ${l.texto}
+                </div>`).join('') || "Sem registros.";
+        }
+
+        async function banirUsuario() {
+            if(!confirm(`Banir ${userSendoVisto}?`)) return;
+            await fetch(`${API}/api/admin/banir`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({target_user: userSendoVisto})
+            });
+            alert("Banido.");
+            fecharModal();
+            carregarDados();
+        }
+
+        async function mudarCargoRapido() {
+            const novo = prompt("Novo cargo:");
+            if(!novo) return;
+            await fetch(`${API}/api/alterar_cargo`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({admin_cargo: logado.cargo, target_user: userSendoVisto, novo_cargo: novo})
+            });
+            carregarDados();
+        }
+
+        async function apagarPost(id) {
+            if(!confirm("Apagar?")) return;
+            await fetch(`${API}/api/apagar_post/${id}`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({cargo: logado.cargo})
+            });
+            carregarDados();
+        }
+
+        async function enviarComentario(postId) {
+            const input = document.getElementById(`com-input-${postId}`);
+            if(!input.value.trim()) return;
+            await fetch(`${API}/api/comentar`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({post_id: postId, autor: logado.user, texto: input.value})
+            });
+            input.value = '';
+            postAberto = null; 
+            carregarDados();
+        }
+
+        function carregarMeuPerfil() {
+            const fotoUrl = logado.foto ? `${API}/uploads/${logado.foto}?t=${Date.now()}` : 'https://www.w3schools.com/howto/img_avatar.png';
+            document.getElementById('meu-perfil-detalhes').innerHTML = `
+                <div class="post-box" style="text-align:center;">
+                    <div class="profile-avatar" style="background-image: url('${fotoUrl}'); cursor:pointer; object-fit:cover;" 
+                         onclick="document.getElementById('input-foto-perfil').click()"></div>
+                    <h1>${logado.user}</h1>
+                    <h3 class="cargo-${logado.cargo.split(' ')[0]}">${logado.cargo}</h3>
+                    <p>Clique na imagem para alterar</p>
+                </div>`;
+        }
+
+        function openChat(nome) {
+            chatCom = nome;
+            document.getElementById('chat-target-name').innerText = nome;
+            document.getElementById('fb-chat-window').style.display = 'flex';
+            atualizarChat();
+        }
+
+        function closeChat() { document.getElementById('fb-chat-window').style.display = 'none'; chatCom = null; }
+        function fecharModal(e) { if(e) e.stopPropagation(); document.getElementById('modal-perfil').style.display = 'none'; }
+        function toggleContacts() {
+            const list = document.getElementById('fb-list');
+            list.style.display = (list.style.display === 'none') ? 'block' : 'none';
+        }
+        function addEmoji(e) { document.getElementById('m-texto').value += e; }
+        async function mandarMensagem() {
+            const texto = document.getElementById('m-texto').value;
+            if(!texto) return;
+            const fd = new FormData();
+            fd.append('remetente', logado.user);
+            fd.append('destinatario', chatCom);
+            fd.append('texto', texto);
+            await fetch(`${API}/api/enviar_mensagem`, { method: 'POST', body: fd });
+            document.getElementById('m-texto').value = '';
+            atualizarChat();
+        }
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.currentTarget.classList.add('active');
+            if(tabId === 'perfil-proprio') carregarMeuPerfil();
+        }
+        async function enviarPost() {
+            const titulo = document.getElementById('p-titulo').value;
+            const conteudo = document.getElementById('p-conteudo').value;
+            if(!titulo || !conteudo) return alert("Preencha tudo!");
+            const fd = new FormData();
+            fd.append('autor', logado.user);
+            fd.append('cargo', logado.cargo);
+            fd.append('titulo', titulo);
+            fd.append('conteudo', conteudo);
+            const file = document.getElementById('p-file').files[0];
+            if(file) fd.append('file', file);
+            const res = await fetch(`${API}/api/postar`, { method: 'POST', body: fd });
+            if(res.ok) {
+                alert("Enviado!");
+                document.getElementById('p-titulo').value = '';
+                document.getElementById('p-conteudo').value = '';
+                carregarDados();
+            }
+        }
+    </script>
+</body>
+</html>
