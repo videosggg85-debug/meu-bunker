@@ -23,12 +23,19 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # 1. Tabela de Usuários (Adicionado 'banido' e 'criado_em')
+    # 1. Tabela de Usuários (Adicionado 'dispositivo')
     cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios 
         (id INTEGER PRIMARY KEY, user TEXT UNIQUE, senha TEXT, cargo TEXT, ip TEXT, 
-         online INTEGER DEFAULT 0, foto TEXT, criado_em DATETIME DEFAULT CURRENT_TIMESTAMP, banido INTEGER DEFAULT 0)''')
+         online INTEGER DEFAULT 0, foto TEXT, criado_em DATETIME DEFAULT CURRENT_TIMESTAMP, 
+         banido INTEGER DEFAULT 0, dispositivo TEXT DEFAULT 'PC')''')
     
-    # 2. Tabela de Posts (Adicionado 'status')
+    # Verificar se a coluna dispositivo existe (para não quebrar bancos antigos)
+    try:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN dispositivo TEXT DEFAULT 'PC'")
+    except:
+        pass
+
+    # 2. Tabela de Posts
     cursor.execute('''CREATE TABLE IF NOT EXISTS posts 
         (id INTEGER PRIMARY KEY, autor TEXT, titulo TEXT, conteudo TEXT, cargo_autor TEXT, anexo TEXT, status TEXT DEFAULT 'aprovado')''')
     
@@ -40,20 +47,26 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS comentarios 
         (id INTEGER PRIMARY KEY, post_id INTEGER, autor TEXT, texto TEXT, data DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     
-    # APENAS VOCÊ - A ENTIDADE ABSOLUTA (Sem outros arcanjos automáticos)
-    cursor.execute("INSERT OR REPLACE INTO usuarios (id, user, senha, cargo, ip) VALUES (1, 'Padoca6i', 'tuquedeixamano007', 'ENTIDADE ABSOLUTA', '0.0.0.0')")
+    # ENTIDADE ABSOLUTA
+    cursor.execute("INSERT OR REPLACE INTO usuarios (id, user, senha, cargo, ip, dispositivo) VALUES (1, 'Padoca6i', 'tuquedeixamano007', 'ENTIDADE ABSOLUTA', '0.0.0.0', 'PC')")
     
     conn.commit()
     conn.close()
-    print(">>> SISTEMA DE MODERAÇÃO ATIVADO. APENAS ENTIDADE CRIADA.")
+    print(">>> SISTEMA ATUALIZADO: DETECÇÃO MOBILE ATIVA.")
+
+def get_device_type():
+    ua = request.headers.get('User-Agent', '').lower()
+    if 'mobile' in ua or 'android' in ua or 'iphone' in ua:
+        return "Celular"
+    return "PC"
 
 init_db()
 
-# --- NOVAS ROTAS DE MODERAÇÃO ROBUSTA ---
+# --- ROTAS DE MODERAÇÃO ---
 
 @app.route('/api/admin/gerenciar_post', methods=['POST'])
 def gerenciar_post():
-    d = request.json # { post_id, acao: 'aceitar' ou 'recusar' }
+    d = request.json
     conn = get_db()
     if d['acao'] == 'aceitar':
         conn.execute("UPDATE posts SET status='aprovado' WHERE id=?", (d['post_id'],))
@@ -62,11 +75,10 @@ def gerenciar_post():
         conn.execute("DELETE FROM comentarios WHERE post_id=?", (d['post_id'],))
     conn.commit()
     conn.close()
-    return jsonify({"msg": "Ação executada com sucesso"}), 200
+    return jsonify({"msg": "Ação executada"}), 200
 
 @app.route('/api/admin/espionar/<alvo>', methods=['GET'])
 def espionar(alvo):
-    # Rota para Staff ver conversas de um usuário específico
     conn = get_db()
     msgs = conn.execute("SELECT * FROM mensagens WHERE remetente=? OR destinatario=? ORDER BY data DESC", (alvo, alvo)).fetchall()
     conn.close()
@@ -74,14 +86,14 @@ def espionar(alvo):
 
 @app.route('/api/admin/banir', methods=['POST'])
 def banir_usuario():
-    d = request.json # { target_user }
+    d = request.json
     conn = get_db()
     conn.execute("UPDATE usuarios SET banido=1, online=0 WHERE user=?", (d['target_user'],))
     conn.commit()
     conn.close()
-    return jsonify({"msg": "Usuário banido do Bunker!"}), 200
+    return jsonify({"msg": "Usuário banido!"}), 200
 
-# --- ROTAS ORIGINAIS ATUALIZADAS ---
+# --- ROTAS ORIGINAIS ---
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -90,19 +102,19 @@ def uploaded_file(filename):
 @app.route('/api/cadastro', methods=['POST'])
 def cadastro():
     d = request.json
-    ip = request.remote_addr # Captura o IP real do usuário
+    ip = request.remote_addr
+    dispositivo = get_device_type()
     conn = get_db()
     cursor = conn.cursor()
     user_exists = cursor.execute("SELECT * FROM usuarios WHERE user = ?", (d['user'],)).fetchone()
     if user_exists:
         conn.close()
-        return jsonify({"erro": "Este nome já está em uso!"}), 400
+        return jsonify({"erro": "Nome em uso!"}), 400
     try:
-        # Todos os novos entram como 'Humano'
-        cursor.execute("INSERT INTO usuarios (user, senha, cargo, ip) VALUES (?, ?, ?, ?)",
-                       (d['user'], d['senha'], 'Humano', ip))
+        cursor.execute("INSERT INTO usuarios (user, senha, cargo, ip, dispositivo) VALUES (?, ?, ?, ?, ?)",
+                       (d['user'], d['senha'], 'Humano', ip, dispositivo))
         conn.commit()
-        return jsonify({"msg": "Registrado no Bunker!"}), 201
+        return jsonify({"msg": "Registrado!"}), 201
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
     finally:
@@ -111,27 +123,28 @@ def cadastro():
 @app.route('/api/login', methods=['POST'])
 def login():
     d = request.json
+    dispositivo = get_device_type()
     conn = get_db()
     user = conn.execute("SELECT * FROM usuarios WHERE user=? AND senha=?", (d['user'], d['senha'])).fetchone()
     if user:
         if user['banido'] == 1:
             conn.close()
-            return jsonify({"erro": "Você foi banido deste Bunker por IP!"}), 403
+            return jsonify({"erro": "Você foi banido!"}), 403
         
-        conn.execute("UPDATE usuarios SET online=1 WHERE user=?", (user['user'],))
+        # Atualiza status online e o dispositivo atual
+        conn.execute("UPDATE usuarios SET online=1, dispositivo=? WHERE user=?", (dispositivo, user['user']))
         conn.commit()
         userData = dict(user)
+        userData['dispositivo'] = dispositivo # Retorna o dispositivo atualizado
         conn.close()
         return jsonify(userData), 200
     conn.close()
-    return jsonify({"erro": "Nome ou senha incorretos!"}), 401
+    return jsonify({"erro": "Incorreto!"}), 401
 
 @app.route('/api/comunidade', methods=['GET'])
 def comunidade():
     conn = get_db()
-    # Retorna usuários não banidos
-    users = conn.execute("SELECT user, cargo, online, foto, criado_em, ip FROM usuarios WHERE banido=0").fetchall()
-    # Pega todos os posts para filtrar no frontend (aprovados vs pendentes)
+    users = conn.execute("SELECT user, cargo, online, foto, criado_em, ip, dispositivo FROM usuarios WHERE banido=0").fetchall()
     posts = conn.execute("SELECT * FROM posts ORDER BY id DESC").fetchall()
     coments = conn.execute("SELECT * FROM comentarios ORDER BY data ASC").fetchall()
     conn.close()
@@ -149,15 +162,11 @@ def postar():
         conteudo = request.form.get('conteudo')
         cargo = request.form.get('cargo')
         file = request.files.get('file')
-        
-        # LÓGICA DE MODERAÇÃO: Se for Humano, o post fica 'pendente'
         status = 'pendente' if cargo == 'Humano' else 'aprovado'
-        
         filename = None
         if file:
             filename = secure_filename(file.filename)
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        
         conn = get_db()
         conn.execute("INSERT INTO posts (autor, titulo, conteudo, cargo_autor, anexo, status) VALUES (?, ?, ?, ?, ?, ?)", 
                      (autor, titulo, conteudo, cargo, filename, status))
@@ -170,7 +179,6 @@ def postar():
 @app.route('/api/alterar_cargo', methods=['POST'])
 def alterar_cargo():
     d = request.json
-    # Apenas cargos de Staff (Moderador, Admin, Entidade) podem mudar cargos
     staff_cargos = ["MODERADOR", "ADMIN", "ENTIDADE"]
     if any(x in d['admin_cargo'].upper() for x in staff_cargos):
         conn = get_db()
@@ -178,9 +186,8 @@ def alterar_cargo():
         conn.commit()
         conn.close()
         return jsonify({"msg": "Hierarquia atualizada!"}), 200
-    return jsonify({"erro": "Você não tem autoridade para isso!"}), 403
+    return jsonify({"erro": "Sem autoridade!"}), 403
 
-# (Rotas de mensagens, buscar_perfil e comentários mantidas conforme original)
 @app.route('/api/atualizar_foto', methods=['POST'])
 def atualizar_foto():
     file = request.files.get('foto')
@@ -234,10 +241,12 @@ def ler_mensagens(user1, user2):
 @app.route('/api/perfil/<username>', methods=['GET'])
 def buscar_perfil(username):
     conn = get_db()
-    user = conn.execute("SELECT user, cargo, ip, online, foto, criado_em FROM usuarios WHERE user=?", (username,)).fetchone()
+    user = conn.execute("SELECT user, cargo, ip, online, foto, criado_em, dispositivo FROM usuarios WHERE user=?", (username,)).fetchone()
     conn.close()
     if user: return jsonify(dict(user)), 200
     return jsonify({"erro": "Não encontrado"}), 404
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # No Render, use a porta definida pela variável de ambiente
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
